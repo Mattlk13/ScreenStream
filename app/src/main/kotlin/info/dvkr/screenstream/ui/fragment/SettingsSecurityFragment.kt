@@ -4,7 +4,6 @@ import android.os.Bundle
 import android.text.InputFilter
 import android.text.InputType
 import android.view.View
-import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import androidx.fragment.app.Fragment
 import com.afollestad.materialdialogs.LayoutMode
@@ -20,7 +19,9 @@ import info.dvkr.screenstream.R
 import info.dvkr.screenstream.data.other.getLog
 import info.dvkr.screenstream.data.settings.Settings
 import info.dvkr.screenstream.data.settings.SettingsReadOnly
-import kotlinx.android.synthetic.main.fragment_settings_security.*
+import info.dvkr.screenstream.databinding.FragmentSettingsSecurityBinding
+import info.dvkr.screenstream.ui.enableDisableViewWithChildren
+import info.dvkr.screenstream.ui.viewBinding
 import org.koin.android.ext.android.inject
 
 class SettingsSecurityFragment : Fragment(R.layout.fragment_settings_security) {
@@ -29,65 +30,69 @@ class SettingsSecurityFragment : Fragment(R.layout.fragment_settings_security) {
     private val settingsListener = object : SettingsReadOnly.OnSettingsChangeListener {
         override fun onSettingsChanged(key: String) = when (key) {
             Settings.Key.PIN ->
-                tv_fragment_settings_set_pin_value.text = settings.pin
+                binding.tvFragmentSettingsSetPinValue.text = settings.pin
 
             else -> Unit
         }
     }
 
+    private val binding by viewBinding { fragment -> FragmentSettingsSecurityBinding.bind(fragment.requireView()) }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
         // Security - Enable pin
-        with(cb_fragment_settings_enable_pin) {
+        with(binding.cbFragmentSettingsEnablePin) {
             isChecked = settings.enablePin
-            enableDisableViewWithChildren(cl_fragment_settings_hide_pin_on_start, settings.enablePin)
-            enableDisableViewWithChildren(cl_fragment_settings_new_pin_on_app_start, settings.enablePin)
-            enableDisableViewWithChildren(cl_fragment_settings_auto_change_pin, settings.enablePin)
-            enableDisableViewWithChildren(cl_fragment_settings_set_pin, canEnableSetPin())
+            binding.clFragmentSettingsHidePinOnStart.enableDisableViewWithChildren(settings.enablePin)
+            binding.clFragmentSettingsNewPinOnAppStart.enableDisableViewWithChildren(settings.enablePin)
+            binding.clFragmentSettingsAutoChangePin.enableDisableViewWithChildren(settings.enablePin)
+            binding.clFragmentSettingsSetPin.enableDisableViewWithChildren(canEnableSetPin())
+            binding.clFragmentSettingsBlockAddress.enableDisableViewWithChildren(isChecked)
             setOnClickListener {
                 if (isChecked) settings.pin = String(settings.pin.toCharArray()) // Workaround for BinaryPreferences IPC
                 settings.enablePin = isChecked
-                enableDisableViewWithChildren(cl_fragment_settings_hide_pin_on_start, isChecked)
-                enableDisableViewWithChildren(cl_fragment_settings_new_pin_on_app_start, isChecked)
-                enableDisableViewWithChildren(cl_fragment_settings_auto_change_pin, isChecked)
-                enableDisableViewWithChildren(cl_fragment_settings_set_pin, canEnableSetPin())
+                binding.clFragmentSettingsHidePinOnStart.enableDisableViewWithChildren(isChecked)
+                binding.clFragmentSettingsNewPinOnAppStart.enableDisableViewWithChildren(isChecked)
+                binding.clFragmentSettingsAutoChangePin.enableDisableViewWithChildren(isChecked)
+                binding.clFragmentSettingsSetPin.enableDisableViewWithChildren(canEnableSetPin())
+                binding.clFragmentSettingsBlockAddress.enableDisableViewWithChildren(isChecked)
             }
-            cl_fragment_settings_enable_pin.setOnClickListener { performClick() }
+            binding.clFragmentSettingsEnablePin.setOnClickListener { performClick() }
         }
 
         // Security - Hide pin on start
-        with(cb_fragment_settings_hide_pin_on_start) {
+        with(binding.cbFragmentSettingsHidePinOnStart) {
             isChecked = settings.hidePinOnStart
             setOnClickListener { settings.hidePinOnStart = isChecked }
-            cl_fragment_settings_hide_pin_on_start.setOnClickListener { performClick() }
+            binding.clFragmentSettingsHidePinOnStart.setOnClickListener { performClick() }
         }
 
         // Security - New pin on app start
-        with(cb_fragment_settings_new_pin_on_app_start) {
+        with(binding.cbFragmentSettingsNewPinOnAppStart) {
             isChecked = settings.newPinOnAppStart
-            enableDisableViewWithChildren(cl_fragment_settings_set_pin, canEnableSetPin())
+            binding.clFragmentSettingsSetPin.enableDisableViewWithChildren(canEnableSetPin())
             setOnClickListener {
                 settings.newPinOnAppStart = isChecked
-                enableDisableViewWithChildren(cl_fragment_settings_set_pin, canEnableSetPin())
+                binding.clFragmentSettingsSetPin.enableDisableViewWithChildren(canEnableSetPin())
             }
-            cl_fragment_settings_new_pin_on_app_start.setOnClickListener { performClick() }
+            binding.clFragmentSettingsNewPinOnAppStart.setOnClickListener { performClick() }
         }
 
         // Security - Auto change pin
-        with(cb_fragment_settings_auto_change_pin) {
+        with(binding.cbFragmentSettingsAutoChangePin) {
             isChecked = settings.autoChangePin
-            enableDisableViewWithChildren(cl_fragment_settings_set_pin, canEnableSetPin())
+            binding.clFragmentSettingsSetPin.enableDisableViewWithChildren(canEnableSetPin())
             setOnClickListener {
                 settings.autoChangePin = isChecked
-                enableDisableViewWithChildren(cl_fragment_settings_set_pin, canEnableSetPin())
+                binding.clFragmentSettingsSetPin.enableDisableViewWithChildren(canEnableSetPin())
             }
-            cl_fragment_settings_auto_change_pin.setOnClickListener { performClick() }
+            binding.clFragmentSettingsAutoChangePin.setOnClickListener { performClick() }
         }
 
         // Security - Set pin
-        tv_fragment_settings_set_pin_value.text = settings.pin
-        cl_fragment_settings_set_pin.setOnClickListener {
+        binding.tvFragmentSettingsSetPinValue.text = settings.pin
+        binding.clFragmentSettingsSetPin.setOnClickListener {
             MaterialDialog(requireActivity(), BottomSheet(LayoutMode.WRAP_CONTENT)).show {
                 lifecycleOwner(viewLifecycleOwner)
                 title(R.string.pref_set_pin)
@@ -96,10 +101,10 @@ class SettingsSecurityFragment : Fragment(R.layout.fragment_settings_security) {
                 input(
                     prefill = settings.pin,
                     inputType = InputType.TYPE_CLASS_NUMBER,
-                    maxLength = 4,
+                    maxLength = 6,
                     waitForPositiveButton = false
                 ) { dialog, text ->
-                    val isValid = text.length in 4..4 && text.toString().toInt() in 0..9999
+                    val isValid = text.length in 4..6 && text.toString().toInt() in 0..999999
                     dialog.setActionButtonEnabled(WhichButton.POSITIVE, isValid)
                 }
                 positiveButton(android.R.string.ok) { dialog ->
@@ -107,9 +112,18 @@ class SettingsSecurityFragment : Fragment(R.layout.fragment_settings_security) {
                     if (settings.pin != newValue) settings.pin = newValue
                 }
                 negativeButton(android.R.string.cancel)
-                getInputField().filters = arrayOf<InputFilter>(InputFilter.LengthFilter(4))
+                getInputField().filters = arrayOf<InputFilter>(InputFilter.LengthFilter(6))
                 getInputField().imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
             }
+        }
+
+        // Security - Block address
+        with(binding.cbFragmentSettingsBlockAddress) {
+            isChecked = settings.blockAddress
+            setOnClickListener {
+                settings.blockAddress = isChecked
+            }
+            binding.clFragmentSettingsBlockAddress.setOnClickListener { performClick() }
         }
     }
 
@@ -117,7 +131,7 @@ class SettingsSecurityFragment : Fragment(R.layout.fragment_settings_security) {
         super.onStart()
         settings.registerChangeListener(settingsListener)
         XLog.d(getLog("onStart", "Invoked"))
-        tv_fragment_settings_set_pin_value.text = settings.pin
+        binding.tvFragmentSettingsSetPinValue.text = settings.pin
     }
 
     override fun onStop() {
@@ -127,14 +141,7 @@ class SettingsSecurityFragment : Fragment(R.layout.fragment_settings_security) {
     }
 
     private fun canEnableSetPin(): Boolean =
-        cb_fragment_settings_enable_pin.isChecked &&
-                cb_fragment_settings_new_pin_on_app_start.isChecked.not() &&
-                cb_fragment_settings_auto_change_pin.isChecked.not()
-
-    private fun enableDisableViewWithChildren(view: View, enabled: Boolean) {
-        view.isEnabled = enabled
-        view.alpha = if (enabled) 1f else .5f
-        if (view is ViewGroup)
-            for (idx in 0 until view.childCount) enableDisableViewWithChildren(view.getChildAt(idx), enabled)
-    }
+        binding.cbFragmentSettingsEnablePin.isChecked &&
+                binding.cbFragmentSettingsNewPinOnAppStart.isChecked.not() &&
+                binding.cbFragmentSettingsAutoChangePin.isChecked.not()
 }

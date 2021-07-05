@@ -81,6 +81,10 @@ class SettingsImpl(private val preferences: Preferences) : Settings {
     override var pin: String
             by bindPreference(preferences, Settings.Key.PIN, Settings.Default.PIN)
 
+    override var blockAddress: Boolean
+            by bindPreference(preferences, Settings.Key.BLOCK_ADDRESS, Settings.Default.BLOCK_ADDRESS)
+
+
     override var useWiFiOnly: Boolean
             by bindPreference(preferences, Settings.Key.USE_WIFI_ONLY, Settings.Default.USE_WIFI_ONLY)
 
@@ -89,6 +93,9 @@ class SettingsImpl(private val preferences: Preferences) : Settings {
 
     override var enableLocalHost: Boolean
             by bindPreference(preferences, Settings.Key.ENABLE_LOCAL_HOST, Settings.Default.ENABLE_LOCAL_HOST)
+
+    override var localHostOnly: Boolean
+            by bindPreference(preferences, Settings.Key.LOCAL_HOST_ONLY, Settings.Default.LOCAL_HOST_ONLY)
 
     override var severPort: Int
             by bindPreference(preferences, Settings.Key.SERVER_PORT, Settings.Default.SERVER_PORT)
@@ -150,6 +157,7 @@ class SettingsImpl(private val preferences: Preferences) : Settings {
     }
 
     private fun randomPin(): String = Random.nextInt(10).toString() + Random.nextInt(10).toString() +
+            Random.nextInt(10).toString() + Random.nextInt(10).toString() +
             Random.nextInt(10).toString() + Random.nextInt(10).toString()
 
     private class PreferenceDelegate<T>(

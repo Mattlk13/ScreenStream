@@ -7,7 +7,7 @@ import com.elvishew.xlog.XLog
 import info.dvkr.screenstream.data.other.getLog
 import info.dvkr.screenstream.service.AppService
 import info.dvkr.screenstream.ui.activity.AppActivity
-import kotlinx.android.parcel.Parcelize
+import kotlinx.parcelize.Parcelize
 
 sealed class IntentAction : Parcelable {
     internal companion object {
@@ -25,7 +25,10 @@ sealed class IntentAction : Parcelable {
 
     fun sendToAppService(context: Context) {
         XLog.i(context.getLog("sendToAppService", this.toString()))
-        AppService.startForeground(context, this.toAppServiceIntent(context))
+        if (this is StartOnBoot)
+            AppService.startForeground(context, this.toAppServiceIntent(context))
+        else
+            AppService.startService(context, this.toAppServiceIntent(context))
     }
 
     @Parcelize object GetServiceState : IntentAction()
@@ -37,5 +40,5 @@ sealed class IntentAction : Parcelable {
     @Parcelize object StartOnBoot : IntentAction()
     @Parcelize object RecoverError : IntentAction()
 
-    override fun toString(): String = this::class.java.simpleName
+    override fun toString(): String = javaClass.simpleName
 }

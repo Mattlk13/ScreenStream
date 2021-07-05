@@ -1,35 +1,15 @@
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
-apply plugin: 'kotlin-android-extensions'
-
+apply plugin: "com.android.library"
+apply plugin: "kotlin-android"
 
 android {
-    compileSdkVersion(compileSdk)
-    buildToolsVersion(buildTools)
+    compileSdkVersion(30)
+    buildToolsVersion("30.0.3")
 
     defaultConfig {
-        minSdkVersion(minSdk)
-        targetSdkVersion(targetSdk)
-        versionCode = 30402
-        versionName = "3.4.2"
-    }
-
-    buildTypes {
-        debug {
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-        release {
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }
-
-    flavorDimensions "default"
-    productFlavors {
-        fabric {
-        }
-
-        fabricfree {
-        }
+        minSdkVersion(21)
+        targetSdkVersion(30)
+        versionCode = 30703
+        versionName = "3.7.3"
     }
 
     compileOptions {
@@ -37,45 +17,23 @@ android {
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8
+    sourceSets {
+        main.java.srcDirs += "src/main/kotlin"
     }
 
-    sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_1_8.toString()
     }
 }
-
-androidExtensions { experimental = true }
 
 dependencies {
-    implementation("org.jetbrains:annotations:$jetbrainsAnnotations")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion")
-    implementation("org.jetbrains.kotlin:kotlin-android-extensions-runtime:$kotlinVersion")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.0")
+    implementation("org.jetbrains.kotlin:kotlin-reflect:1.5.20")
 
-    implementation("androidx.annotation:annotation:$androidxAnnotation")
-    implementation("androidx.core:core:1.2.0")
-    implementation("androidx.arch.core:core-common:2.1.0")
-    implementation("androidx.collection:collection:1.1.0")
-    implementation("androidx.lifecycle:lifecycle-common-java8:2.2.0")
-    implementation("androidx.lifecycle:lifecycle-runtime:2.2.0")
+    implementation("androidx.core:core:1.6.0")
 
-    implementation("io.reactivex:rxjava:$rxJava")
-    implementation("com.jakewharton.rxrelay:rxrelay:$rxRelay")
+    implementation("io.ktor:ktor-server-cio:1.6.0")
 
-    implementation("io.netty:netty-codec-http:$netty")
-    implementation("io.netty:netty-handler:$netty")
-    implementation("io.reactivex:rxnetty-common:$rxNetty")
-    implementation("io.reactivex:rxnetty-http:$rxNetty")
-
-    implementation("com.google.zxing:core:$zxing")
-
-    implementation("com.github.iamironz:binaryprefs:$binaryprefs")
-    implementation("com.elvishew:xlog:$xlog")
-}
-
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompile).all {
-    kotlinOptions.freeCompilerArgs += ["-Xuse-experimental=kotlinx.coroutines.ExperimentalCoroutinesApi"]
-    kotlinOptions.freeCompilerArgs += ["-Xuse-experimental=kotlinx.coroutines.FlowPreview"]
+    implementation("com.github.iamironz:binaryprefs:1.0.1")
+    implementation('com.elvishew:xlog:1.10.1')
 }

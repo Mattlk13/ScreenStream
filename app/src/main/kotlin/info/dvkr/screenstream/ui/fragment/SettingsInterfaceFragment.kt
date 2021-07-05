@@ -20,8 +20,9 @@ import info.dvkr.screenstream.R
 import info.dvkr.screenstream.data.other.getLog
 import info.dvkr.screenstream.data.settings.Settings
 import info.dvkr.screenstream.data.settings.SettingsReadOnly
+import info.dvkr.screenstream.databinding.FragmentSettingsInterfaceBinding
 import info.dvkr.screenstream.service.helper.NotificationHelper
-import kotlinx.android.synthetic.main.fragment_settings_interface.*
+import info.dvkr.screenstream.ui.viewBinding
 import org.koin.android.ext.android.inject
 
 class SettingsInterfaceFragment : Fragment(R.layout.fragment_settings_interface) {
@@ -32,7 +33,10 @@ class SettingsInterfaceFragment : Fragment(R.layout.fragment_settings_interface)
         override fun onSettingsChanged(key: String) = when (key) {
             Settings.Key.NIGHT_MODE -> {
                 val index = nightModeList.first { it.second == settings.nightMode }.first
-                tv_fragment_settings_night_mode_summary.text = nightModeOptions[index]
+                binding.tvFragmentSettingsNightModeSummary.text = nightModeOptions[index]
+            }
+            Settings.Key.HTML_BACK_COLOR -> {
+                binding.vFragmentSettingsHtmlBackColor.color = settings.htmlBackColor
             }
             else -> Unit
         }
@@ -57,13 +61,15 @@ class SettingsInterfaceFragment : Fragment(R.layout.fragment_settings_interface)
             resources.getStringArray(R.array.pref_night_mode_options_api29).asList()
     }
 
+    private val binding by viewBinding { fragment -> FragmentSettingsInterfaceBinding.bind(fragment.requireView()) }
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
         // Interface - Night mode
         val index = nightModeList.first { it.second == settings.nightMode }.first
-        tv_fragment_settings_night_mode_summary.text = nightModeOptions[index]
-        cl_fragment_settings_night_mode.setOnClickListener {
+        binding.tvFragmentSettingsNightModeSummary.text = nightModeOptions[index]
+        binding.clFragmentSettingsNightMode.setOnClickListener {
             val indexOld = nightModeList.first { it.second == settings.nightMode }.first
             MaterialDialog(requireActivity(), BottomSheet(LayoutMode.WRAP_CONTENT)).show {
                 lifecycleOwner(viewLifecycleOwner)
@@ -80,56 +86,62 @@ class SettingsInterfaceFragment : Fragment(R.layout.fragment_settings_interface)
 
         // Interface - Device notification settings
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            cl_fragment_settings_notification.setOnClickListener {
+            binding.clFragmentSettingsNotification.setOnClickListener {
                 try {
                     startActivity(notificationHelper.getNotificationSettingsIntent())
                 } catch (ignore: ActivityNotFoundException) {
                 }
             }
         } else {
-            cl_fragment_settings_notification.visibility = View.GONE
-            v_fragment_settings_notification.visibility = View.GONE
+            binding.clFragmentSettingsNotification.visibility = View.GONE
+            binding.vFragmentSettingsNotification.visibility = View.GONE
         }
 
         // Interface - Stop on sleep
-        with(cb_fragment_settings_stop_on_sleep) {
+        with(binding.cbFragmentSettingsStopOnSleep) {
             isChecked = settings.stopOnSleep
             setOnClickListener { settings.stopOnSleep = isChecked }
-            cl_fragment_settings_stop_on_sleep.setOnClickListener { performClick() }
+            binding.clFragmentSettingsStopOnSleep.setOnClickListener { performClick() }
         }
 
         // Interface - StartService on boot
-        with(cb_fragment_settings_start_on_boot) {
+        with(binding.cbFragmentSettingsStartOnBoot) {
             isChecked = settings.startOnBoot
             setOnClickListener { settings.startOnBoot = isChecked }
-            cl_fragment_settings_start_on_boot.setOnClickListener { performClick() }
+            binding.clFragmentSettingsStartOnBoot.setOnClickListener { performClick() }
         }
 
         // Interface - Auto start stop
-        with(cb_fragment_settings_auto_start_stop) {
-            isChecked = settings.autoStartStop
-            setOnClickListener { settings.autoStartStop = isChecked }
-            cl_fragment_settings_auto_start_stop.setOnClickListener { performClick() }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            binding.clFragmentSettingsAutoStartStop.visibility = View.GONE
+            binding.vFragmentSettingsAutoStartStop.visibility = View.GONE
+        } else {
+            with(binding.cbFragmentSettingsAutoStartStop) {
+                isChecked = settings.autoStartStop
+                setOnClickListener { settings.autoStartStop = isChecked }
+                binding.clFragmentSettingsAutoStartStop.setOnClickListener { performClick() }
+            }
         }
 
         // Interface - Notify slow connections
-        with(cb_fragment_settings_notify_slow_connections) {
+        with(binding.cbFragmentSettingsNotifySlowConnections) {
             isChecked = settings.notifySlowConnections
             setOnClickListener { settings.notifySlowConnections = isChecked }
-            cl_fragment_settings_notify_slow_connections.setOnClickListener { performClick() }
+            binding.clFragmentSettingsNotifySlowConnections.setOnClickListener { performClick() }
         }
 
         // Interface - Web page Image buttons
-        with(cb_fragment_settings_html_buttons) {
+        with(binding.cbFragmentSettingsHtmlButtons) {
             isChecked = settings.htmlEnableButtons
             setOnClickListener { settings.htmlEnableButtons = isChecked }
-            cl_fragment_settings_html_buttons.setOnClickListener { performClick() }
+            binding.clFragmentSettingsHtmlButtons.setOnClickListener { performClick() }
         }
 
         // Interface - Web page HTML Back color
-        v_fragment_settings_html_back_color.color = settings.htmlBackColor
-        v_fragment_settings_html_back_color.border = ContextCompat.getColor(requireContext(), R.color.textColorPrimary)
-        cl_fragment_settings_html_back_color.setOnClickListener {
+        binding.vFragmentSettingsHtmlBackColor.color = settings.htmlBackColor
+        binding.vFragmentSettingsHtmlBackColor.border =
+            ContextCompat.getColor(requireContext(), R.color.textColorPrimary)
+        binding.clFragmentSettingsHtmlBackColor.setOnClickListener {
             MaterialDialog(requireActivity()).show {
                 lifecycleOwner(viewLifecycleOwner)
                 title(R.string.pref_html_back_color_title)

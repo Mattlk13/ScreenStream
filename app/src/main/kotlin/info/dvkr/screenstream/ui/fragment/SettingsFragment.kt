@@ -8,14 +8,17 @@ import com.elvishew.xlog.XLog
 import com.google.android.material.tabs.TabLayoutMediator
 import info.dvkr.screenstream.R
 import info.dvkr.screenstream.data.other.getLog
-import kotlinx.android.synthetic.main.fragment_settings.*
+import info.dvkr.screenstream.databinding.FragmentSettingsBinding
+import info.dvkr.screenstream.ui.viewBinding
 
 class SettingsFragment : Fragment(R.layout.fragment_settings) {
+
+    private val binding by viewBinding { fragment -> FragmentSettingsBinding.bind(fragment.requireView()) }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        vp_fragment_settings.adapter = object : FragmentStateAdapter(this) {
+        binding.vpFragmentSettings.adapter = object : FragmentStateAdapter(this) {
             override fun getItemCount(): Int = 4
 
             override fun createFragment(position: Int): Fragment =
@@ -28,7 +31,7 @@ class SettingsFragment : Fragment(R.layout.fragment_settings) {
                 }
         }
 
-        TabLayoutMediator(tl_fragment_settings, vp_fragment_settings) { tab, position ->
+        TabLayoutMediator(binding.tlFragmentSettings, binding.vpFragmentSettings) { tab, position ->
             tab.text = when (position) {
                 0 -> requireContext().getString(R.string.pref_settings_interface)
                 1 -> requireContext().getString(R.string.pref_settings_image)

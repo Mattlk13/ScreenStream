@@ -1,134 +1,135 @@
-apply plugin: 'com.android.application'
-apply plugin: 'kotlin-android'
-apply plugin: 'kotlin-android-extensions'
+apply plugin: "com.android.application"
+apply plugin: "kotlin-android"
+apply plugin: "kotlin-parcelize"
 apply plugin: "com.google.gms.google-services"
-apply plugin: 'com.google.firebase.crashlytics'
-apply plugin: 'com.getkeepsafe.dexcount'
+apply plugin: "com.google.firebase.crashlytics"
 
 android {
-    compileSdkVersion(compileSdk)
-    buildToolsVersion(buildTools)
+    compileSdkVersion(30)
+    buildToolsVersion("30.0.3")
 
     defaultConfig {
         applicationId = "info.dvkr.screenstream"
-        minSdkVersion(minSdk)
-        targetSdkVersion(targetSdk)
-        versionCode = 30402
-        versionName = "3.4.2"
-        resConfigs("en", "ru", "pt-rBR", "zh-rTW", "fr-rFR", "fa", "it", "pl", "hi", "de", "sk", "es", "ar")
+        minSdkVersion(21)
+        targetSdkVersion(30)
+        versionCode = 30703
+        versionName = "3.7.3"
+        resConfigs("en", "ru", "pt-rBR", "zh-rTW", "fr-rFR", "fa", "it", "pl", "hi", "de", "sk", "es", "ar", "ja", "gl", "ca")
 
         vectorDrawables.useSupportLibrary = true
     }
 
     buildTypes {
-        debug {
-            ext.enableCrashlytics = false
-            ext.alwaysUpdateBuildId = false
-            minifyEnabled false
-            shrinkResources false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        getByName("debug") {
+            minifyEnabled = false
+            shrinkResources = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
-        release {
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }
+        getByName("release") {
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 
-    flavorDimensions "default"
-    productFlavors {
-        fabric {
-
-        }
-
-        fabricfree {
-            firebaseCrashlytics {
-                mappingFileUploadEnabled false
+            packagingOptions {
+                exclude("DebugProbesKt.bin")
             }
-            ext.enableCrashlytics = false
-            ext.alwaysUpdateBuildId = false
         }
     }
+
+    Properties localProps = new Properties()
+    File localProperties = new File(rootProject.rootDir, "local.properties")
+    if (localProperties.exists() && localProperties.isFile()) {
+        localProperties.withInputStream { localProps.load(it) }
+    }
+    flavorDimensions("default")
+    productFlavors {
+        create("firebase") {
+            buildConfigField "String", "AD_UNIT_ID",  localProps.getProperty("ad.unitId", "ca-app-pub-3940256099942544/6300978111")
+        }
+        create("firebasefree") {
+            firebaseCrashlytics.mappingFileUploadEnabled = false
+        }
+    }
+
+    buildFeatures.viewBinding = true
 
     compileOptions {
+        coreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8
-    }
-
     sourceSets {
-        main.java.srcDirs += 'src/main/kotlin'
+        main.java.srcDirs += "src/main/kotlin"
 
-        fabric.java.srcDirs += 'src/fabric/kotlin'
-        fabricDebug.java.srcDirs += 'src/fabricDebug/kotlin'
-        fabricRelease.java.srcDirs += 'src/fabricRelease/kotlin'
+        firebase.java.srcDirs += "src/firebase/kotlin"
+        firebaseDebug.java.srcDirs += "src/firebaseDebug/kotlin"
+        firebaseRelease.java.srcDirs += "src/firebaseRelease/kotlin"
 
-        fabricfree.java.srcDirs += 'src/fabricfree/kotlin'
-        fabricfreeDebug.java.srcDirs += 'src/fabricfreeDebug/kotlin'
-        fabricfreeRelease.java.srcDirs += 'src/fabricfreeRelease/kotlin'
+        firebasefree.java.srcDirs += "src/firebasefree/kotlin"
+        firebasefreeDebug.java.srcDirs += "src/firebasefreeDebug/kotlin"
+        firebasefreeRelease.java.srcDirs += "src/firebasefreeRelease/kotlin"
     }
 
     packagingOptions {
-        exclude 'META-INF/INDEX.LIST'
-        exclude 'META-INF/io.netty.versions.properties'
+        exclude("META-INF/INDEX.LIST")
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_1_8.toString()
     }
 }
-
-androidExtensions { experimental = true }
 
 dependencies {
-    implementation project(':data')
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.1.5")
 
-    implementation("org.jetbrains:annotations:$jetbrainsAnnotations")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlinVersion")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutineVersion")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutineVersion")
+    implementation(project(":data"))
 
-    implementation("androidx.annotation:annotation:$androidxAnnotation")
-    implementation("com.google.android.material:material:$androidMaterial")
-    implementation("androidx.appcompat:appcompat:$androidxAppcompat")
-    implementation('androidx.fragment:fragment-ktx:1.2.2')
-    implementation('androidx.recyclerview:recyclerview:1.1.0')
-    implementation("androidx.constraintlayout:constraintlayout:$androidxConstraint")
-    implementation("androidx.navigation:navigation-fragment-ktx:$androidxNavigation")
-    implementation("androidx.navigation:navigation-ui-ktx:$androidxNavigation")
-    implementation('androidx.viewpager2:viewpager2:1.0.0')
-    implementation("androidx.lifecycle:lifecycle-livedata:$androidxLifecycle")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.0")
 
-    implementation("com.afollestad.material-dialogs:core:$materialDialogs")
-    implementation("com.afollestad.material-dialogs:color:$materialDialogs")
-    implementation("com.afollestad.material-dialogs:input:$materialDialogs")
-    implementation("com.afollestad.material-dialogs:lifecycle:$materialDialogs")
-    implementation files('libs/bottomsheets-release.aar')  // Temp fix for https://github.com/afollestad/material-dialogs/issues/1825
-//    implementation("com.afollestad.material-dialogs:bottomsheets:$materialDialogs")
+    implementation("androidx.core:core-ktx:1.6.0")
+    implementation("androidx.activity:activity-ktx:1.2.3")
+    implementation("androidx.fragment:fragment-ktx:1.3.5")
+    implementation("androidx.appcompat:appcompat:1.3.0")
+    implementation("androidx.constraintlayout:constraintlayout:2.0.4")
+    implementation("androidx.recyclerview:recyclerview:1.2.1")
+    implementation("com.google.android.material:material:1.4.0")
 
-    implementation("org.koin:koin-android:$koin")
-    implementation("com.github.iamironz:binaryprefs:$binaryprefs")
-    implementation("com.elvishew:xlog:$xlog")
+    implementation("androidx.navigation:navigation-fragment-ktx:2.3.5")
+    implementation("androidx.navigation:navigation-ui-ktx:2.3.5")
+    implementation("androidx.lifecycle:lifecycle-livedata:2.3.1")
+    implementation("androidx.lifecycle:lifecycle-common-java8:2.3.1")
 
-    fabricImplementation("com.google.android.play:core-ktx:1.6.5")
-    fabricReleaseImplementation('com.google.firebase:firebase-analytics:17.2.3')
-    fabricReleaseImplementation("com.google.firebase:firebase-crashlytics:17.0.0-beta01")
+    implementation("com.afollestad.material-dialogs:core:3.3.0")
+    implementation("com.afollestad.material-dialogs:color:3.3.0")
+    implementation("com.afollestad.material-dialogs:input:3.3.0")
+    implementation("com.afollestad.material-dialogs:lifecycle:3.3.0")
+    // Temp fix for https://github.com/afollestad/material-dialogs/issues/1825
+    implementation(fileTree("libs/bottomsheets-release.aar"))
+//    implementation("com.afollestad.material-dialogs:bottomsheets:3.3.0")
 
-    debugImplementation("com.squareup.leakcanary:leakcanary-android:2.2")
+    implementation("io.insert-koin:koin-android:3.1.2")
+    implementation("com.github.iamironz:binaryprefs:1.0.1")
+    implementation("com.elvishew:xlog:1.10.1")
+
+    firebaseImplementation("com.google.android.play:core:1.10.0")
+    firebaseImplementation("com.google.android.play:core-ktx:1.8.1") {
+        exclude group: "org.jetbrains.kotlin"
+        exclude group: "org.jetbrains.kotlinx"
+        exclude group: "androidx.fragment"
+        exclude group: "androidx.core"
+    }
+    firebaseImplementation("com.google.firebase:firebase-analytics:19.0.0")
+    firebaseImplementation("com.google.firebase:firebase-crashlytics:18.1.0")
+    firebaseImplementation("com.google.android.gms:play-services-ads:20.2.0")
+
+    debugImplementation("com.squareup.leakcanary:leakcanary-android:2.7")
 }
 
-android.applicationVariants.all { variant ->
-    if (variant.name == "fabricfreeDebug" || variant.name == "fabricfreeRelease") {
-        project.tasks.getByName("process" + variant.name.capitalize() + "GoogleServices").enabled = false
+android.applicationVariants.all {
+    if (flavorName.contains("firebasefree")) {
+        project.tasks.getByName("injectCrashlyticsMappingFileId" + name.capitalize()).enabled = false
+        project.tasks.getByName("process" + name.capitalize() + "GoogleServices").enabled = false
     }
 }
-
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompile).all {
-    kotlinOptions.freeCompilerArgs += ["-Xuse-experimental=kotlinx.coroutines.ExperimentalCoroutinesApi"]
-    kotlinOptions.freeCompilerArgs += ["-Xuse-experimental=kotlinx.coroutines.FlowPreview"]
-}
-
-//tasks.whenTaskAdded { task ->
-//    if (task.name.contains("uploadCrashlyticsMappingFileFabricfreeRelease")) {
-//        task.enabled = false
-//    }
-//}

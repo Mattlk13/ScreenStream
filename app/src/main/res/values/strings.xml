@@ -39,8 +39,13 @@
     <string name="stream_fragment_client_disconnected">Disconnected</string>
     <string name="stream_fragment_client_slow_network">Slow connection</string>
     <string name="stream_fragment_client_connected">Connected</string>
+    <string name="stream_fragment_client_blocked">Blocked</string>
 
     <string name="item_device_address">Device address:</string>
+    <string name="item_device_address_description_open_address">Open address</string>
+    <string name="item_device_address_description_copy_address">Copy address</string>
+    <string name="item_device_address_description_share_address">Share address</string>
+    <string name="item_device_address_description_qr_address">Show address as QR-code</string>
 
     <string name="permission_activity_error_title_activity_not_found">Permission dialog error</string>
     <string name="permission_activity_error_activity_not_found">Android bug. Don\'t check \"Don\'t show again\" at the rights request dialogue to capture the screen. If you already did so, reinstall the app.</string>
@@ -118,10 +123,10 @@
     </string-array>
     <string name="pref_fps">Limit frames per second</string>
     <string name="pref_fps_summary">Set maximum frames per second</string>
-    <string name="pref_fps_dialog">Set maximum frames per second.\nValues: 1–30 (Default: 8)</string>
+    <string name="pref_fps_dialog">Set maximum frames per second.\nValues: 1–60 (Default: 30)</string>
     <string name="pref_jpeg_quality">JPEG compression quality</string>
     <string name="pref_jpeg_quality_summary">Set JPEG compression quality</string>
-    <string name="pref_jpeg_quality_dialog">Set JPEG compression quality.\nValues: 10–100 (Default: 100)</string>
+    <string name="pref_jpeg_quality_dialog">Set JPEG compression quality.\nValues: 10–100 (Default: 80)</string>
     <string name="pref_settings_security">Security</string>
     <string name="pref_enable_pin">Enable pin</string>
     <string name="pref_enable_pin_summary">Protect access to stream with pin</string>
@@ -134,6 +139,8 @@
     <string name="pref_set_pin">Set pin</string>
     <string name="pref_set_pin_summary">Enter pin manually</string>
     <string name="pref_set_pin_dialog">Enter pin.\nDefault: 0000</string>
+    <string name="pref_block_address">Block IP address</string>
+    <string name="pref_block_address_summary">Block client IP address after 5 wrong pin attempts for 5 minutes</string>
     <string name="pref_settings_advanced">Advanced</string>
     <string name="pref_wifi_only">Use WiFi only</string>
     <string name="pref_wifi_only_summary">Run server on WiFi interface only</string>
@@ -141,6 +148,8 @@
     <string name="pref_enable_ipv6_summary">Run server on IPv6 addresses also</string>
     <string name="pref_enable_localhost">Enable local host</string>
     <string name="pref_enable_localhost_summary">Run server on local host addresses also</string>
+    <string name="pref_localhost_only">Local host only</string>
+    <string name="pref_localhost_only_summary">Run server on local host addresses only</string>
     <string name="pref_server_port">Server port</string>
     <string name="pref_server_port_summary">Set port for incoming connections</string>
     <string name="pref_server_port_dialog">Set server port for incoming connections.\nValues: 1025–65535\n(Default: 8080)</string>
@@ -156,4 +165,5 @@
     <string name="about_fragment_email_chooser_header">Sending email…</string>
     <string name="about_fragment_app_sources">Application sources</string>
     <string name="about_fragment_privacy_policy">Privacy policy</string>
+    <string name="about_fragment_license">License</string>
 </resources>

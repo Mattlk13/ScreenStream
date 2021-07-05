@@ -29,10 +29,12 @@ interface SettingsReadOnly {
     val newPinOnAppStart: Boolean
     val autoChangePin: Boolean
     val pin: String
+    val blockAddress: Boolean
 
     val useWiFiOnly: Boolean
     val enableIPv6: Boolean
     val enableLocalHost: Boolean
+    val localHostOnly: Boolean
     val severPort: Int
     val loggingVisible: Boolean
     val loggingOn: Boolean

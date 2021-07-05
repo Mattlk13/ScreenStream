@@ -15,7 +15,8 @@ import info.dvkr.screenstream.R
 import info.dvkr.screenstream.data.other.getLog
 import info.dvkr.screenstream.service.helper.IntentAction
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
 
 @TargetApi(Build.VERSION_CODES.N)
@@ -29,30 +30,30 @@ class TileActionService : TileService() {
     override fun onStartListening() {
         super.onStartListening()
         XLog.d(getLog("onStartListening", " isRunning:${AppService.isRunning}, isBound:$isBound"))
-        if (AppService.isRunning && isBound.not()) {
-            coroutineScope?.cancel()
-            coroutineScope = CoroutineScope(
-                Job() + Dispatchers.Main.immediate + CoroutineExceptionHandler { _, throwable ->
-                    XLog.e(getLog("onCoroutineException"), throwable)
-                }
-            )
 
+        if (AppService.isRunning && isBound.not()) {
             serviceConnection = object : ServiceConnection {
                 override fun onServiceConnected(name: ComponentName?, service: IBinder) {
                     XLog.d(this@TileActionService.getLog("onServiceConnected"))
-                    (service as AppService.AppServiceBinder).getServiceMessageFlow()
-                        .onEach {
-                            XLog.v(this@TileActionService.getLog("onServiceMessage", "$it"))
-                            when (it) {
-                                is ServiceMessage.ServiceState -> {
-                                    isStreaming = it.isStreaming; updateTile()
+                    coroutineScope?.cancel()
+                    coroutineScope = CoroutineScope(Job() + Dispatchers.Main.immediate).apply {
+                        launch(CoroutineName("TileActionService.ServiceMessageFlow")) {
+                            (service as AppService.AppServiceBinder).getServiceMessageFlow()
+                                .onEach { serviceMessage ->
+                                    XLog.d(this@TileActionService.getLog("onServiceMessage", "$serviceMessage"))
+                                    when (serviceMessage) {
+                                        is ServiceMessage.ServiceState -> {
+                                            isStreaming = serviceMessage.isStreaming; updateTile()
+                                        }
+                                        is ServiceMessage.FinishActivity -> {
+                                            isStreaming = false; updateTile()
+                                        }
+                                    }
                                 }
-                                is ServiceMessage.FinishActivity -> {
-                                    isStreaming = false; updateTile()
-                                }
-                            }
+                                .catch { cause -> XLog.e(this@TileActionService.getLog("onServiceMessage"), cause) }
+                                .collect()
                         }
-                        .launchIn(coroutineScope!!)
+                    }
                     isBound = true
                     IntentAction.GetServiceState.sendToAppService(this@TileActionService)
                 }
@@ -98,7 +99,7 @@ class TileActionService : TileService() {
     private fun updateTile() {
         XLog.d(getLog("updateTile", "isRunning:${AppService.isRunning}, isStreaming: $isStreaming"))
         if (AppService.isRunning.not()) {
-            qsTile.apply {
+            qsTile?.apply {
                 icon = Icon.createWithResource(this@TileActionService, R.drawable.ic_tile_default_24dp)
                 label = getString(R.string.app_name)
                 contentDescription = getString(R.string.app_name)
@@ -106,15 +107,15 @@ class TileActionService : TileService() {
                 updateTile()
             }
         } else if (isStreaming.not()) {
-            qsTile.apply {
+            qsTile?.apply {
                 icon = Icon.createWithResource(this@TileActionService, R.drawable.ic_tile_start_24dp)
                 label = getString(R.string.notification_start)
                 contentDescription = getString(R.string.notification_start)
                 state = Tile.STATE_ACTIVE
-                updateTile()
+                runCatching { updateTile() }
             }
         } else {
-            qsTile.apply {
+            qsTile?.apply {
                 icon = Icon.createWithResource(this@TileActionService, R.drawable.ic_tile_stop_24dp)
                 label = getString(R.string.notification_stop)
                 contentDescription = getString(R.string.notification_stop)

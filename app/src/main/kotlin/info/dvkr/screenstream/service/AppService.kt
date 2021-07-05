@@ -3,12 +3,11 @@ package info.dvkr.screenstream.service
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
 import android.view.LayoutInflater
 import android.widget.Toast
-import androidx.annotation.AnyThread
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.content.ContextCompat
 import com.elvishew.xlog.XLog
@@ -16,49 +15,44 @@ import info.dvkr.screenstream.R
 import info.dvkr.screenstream.data.model.AppError
 import info.dvkr.screenstream.data.model.FatalError
 import info.dvkr.screenstream.data.model.HttpClient
-import info.dvkr.screenstream.data.model.TrafficPoint
 import info.dvkr.screenstream.data.other.getLog
 import info.dvkr.screenstream.data.settings.Settings
 import info.dvkr.screenstream.data.settings.SettingsReadOnly
 import info.dvkr.screenstream.data.state.AppStateMachine
 import info.dvkr.screenstream.data.state.AppStateMachineImpl
+import info.dvkr.screenstream.databinding.ToastSlowConnectionBinding
 import info.dvkr.screenstream.service.helper.IntentAction
 import info.dvkr.screenstream.service.helper.NotificationHelper
-import kotlinx.android.synthetic.main.toast_slow_connection.view.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.ConflatedBroadcastChannel
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.*
 import org.koin.android.ext.android.inject
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class AppService : Service() {
 
     companion object {
         var isRunning: Boolean = false
 
-        fun getAppServiceIntent(context: Context): Intent =
-            Intent(context.applicationContext, AppService::class.java)
+        fun getAppServiceIntent(context: Context): Intent = Intent(context.applicationContext, AppService::class.java)
 
-        fun startForeground(context: Context, intent: Intent = getAppServiceIntent(context)) =
-            ContextCompat.startForegroundService(context, intent)
+        fun startService(context: Context, intent: Intent) = context.startService(intent)
+
+        fun startForeground(context: Context, intent: Intent) = ContextCompat.startForegroundService(context, intent)
     }
 
-    inner class AppServiceBinder : Binder() {
-        fun getServiceMessageFlow(): Flow<ServiceMessage> = serviceMessageFlow
+    class AppServiceBinder(private val serviceMessageSharedFlow: MutableSharedFlow<ServiceMessage>) : Binder() {
+        fun getServiceMessageFlow(): SharedFlow<ServiceMessage> = serviceMessageSharedFlow.asSharedFlow()
     }
 
-    private val appServiceBinder = AppServiceBinder()
-    private val serviceMessageChannel = ConflatedBroadcastChannel<ServiceMessage>()
-    private val serviceMessageFlow: Flow<ServiceMessage> = serviceMessageChannel.asFlow()
+    private val _serviceMessageSharedFlow =
+        MutableSharedFlow<ServiceMessage>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private var appServiceBinder: AppServiceBinder? = AppServiceBinder(_serviceMessageSharedFlow)
 
     private fun sendMessageToActivities(serviceMessage: ServiceMessage) {
         XLog.v(getLog("sendMessageToActivities", "ServiceMessage: $serviceMessage"))
-        if (serviceMessageChannel.isClosedForSend) {
-            XLog.w(getLog("sendMessageToActivities", "ServiceMessageChannel: isClosedForSend"))
-            return
-        }
-        serviceMessageChannel.offer(serviceMessage)
+        _serviceMessageSharedFlow.tryEmit(serviceMessage)
     }
 
     private val coroutineScope = CoroutineScope(
@@ -69,16 +63,16 @@ class AppService : Service() {
     )
 
     private val isStreaming = AtomicBoolean(false)
-    private var errorPrevious: AppError? = null
+    private val errorPrevious = AtomicReference<AppError?>(null)
 
     override fun onBind(intent: Intent?): IBinder? {
         XLog.d(getLog("onBind", "Invoked"))
         return appServiceBinder
     }
 
-    @AnyThread
     private fun onError(appError: AppError?) {
-        errorPrevious != appError || return
+        val oldError = errorPrevious.getAndSet(appError)
+        oldError != appError || return
 
         if (appError == null) {
             notificationHelper.hideErrorNotification()
@@ -86,12 +80,11 @@ class AppService : Service() {
             XLog.e(this@AppService.getLog("onError", "AppError: $appError"))
             notificationHelper.showErrorNotification(appError)
         }
-
-        errorPrevious = appError
     }
 
-    private fun onEffect(effect: AppStateMachine.Effect) {
-        XLog.d(getLog("onEffect", "Effect: $effect"))
+    private suspend fun onEffect(effect: AppStateMachine.Effect) = coroutineScope.launch {
+        if (effect !is AppStateMachine.Effect.Statistic)
+            XLog.d(this@AppService.getLog("onEffect", "Effect: $effect"))
 
         when (effect) {
             is AppStateMachine.Effect.ConnectionChanged -> Unit  // TODO Notify user about restart reason
@@ -107,38 +100,46 @@ class AppService : Service() {
                 )
 
                 if (effect.isStreaming)
-                    notificationHelper.showForegroundNotification(this, NotificationHelper.NotificationType.STOP)
+                    notificationHelper.showForegroundNotification(
+                        this@AppService, NotificationHelper.NotificationType.STOP
+                    )
                 else
-                    notificationHelper.showForegroundNotification(this, NotificationHelper.NotificationType.START)
+                    notificationHelper.showForegroundNotification(
+                        this@AppService, NotificationHelper.NotificationType.START
+                    )
                 onError(effect.appError)
             }
+
+            is AppStateMachine.Effect.Statistic ->
+                when (effect) {
+                    is AppStateMachine.Effect.Statistic.Clients -> {
+                        if (settings.autoStartStop) checkAutoStartStop(effect.clients)
+                        if (settings.notifySlowConnections) checkForSlowClients(effect.clients)
+                        sendMessageToActivities(ServiceMessage.Clients(effect.clients))
+                    }
+
+                    is AppStateMachine.Effect.Statistic.Traffic ->
+                        sendMessageToActivities(ServiceMessage.TrafficHistory(effect.traffic))
+
+                    else -> throw IllegalArgumentException("Unexpected onEffect: $effect")
+                }
         }
-    }
+    }.join()
 
     private val settings: Settings by inject()
     private val notificationHelper: NotificationHelper by inject()
-    private lateinit var appStateMachine: AppStateMachine
+    private var appStateMachine: AppStateMachine? = null
 
     override fun onCreate() {
         super.onCreate()
+        XLog.d(getLog("onCreate"))
         notificationHelper.createNotificationChannel()
         notificationHelper.showForegroundNotification(this, NotificationHelper.NotificationType.START)
 
         settings.autoChangePinOnStart()
 
-        appStateMachine = AppStateMachineImpl(
-            this,
-            coroutineScope.coroutineContext[Job.Key],
-            settings as SettingsReadOnly,
-            BitmapFactory.decodeResource(resources, R.drawable.logo),
-            { clients: List<HttpClient>, trafficHistory: List<TrafficPoint> ->
-                if (settings.autoStartStop) checkAutoStartStop(clients)
-                if (settings.notifySlowConnections) checkForSlowClients(clients)
-                sendMessageToActivities(ServiceMessage.Clients(clients))
-                sendMessageToActivities(ServiceMessage.TrafficHistory(trafficHistory))
-            },
-            ::onEffect
-        )
+        appStateMachine = AppStateMachineImpl(this, settings as SettingsReadOnly, ::onEffect)
+
         isRunning = true
     }
 
@@ -149,44 +150,44 @@ class AppService : Service() {
 
         when (intentAction) {
             IntentAction.GetServiceState -> {
-                appStateMachine.sendEvent(AppStateMachine.Event.RequestPublicState)
+                appStateMachine?.sendEvent(AppStateMachine.Event.RequestPublicState)
             }
 
             IntentAction.StartStream -> {
                 sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
-                appStateMachine.sendEvent(AppStateMachine.Event.StartStream)
+                appStateMachine?.sendEvent(AppStateMachine.Event.StartStream)
             }
 
             IntentAction.StopStream -> {
                 sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
-                appStateMachine.sendEvent(AppStateMachine.Event.StopStream)
+                appStateMachine?.sendEvent(AppStateMachine.Event.StopStream)
             }
 
             IntentAction.Exit -> {
                 sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
                 notificationHelper.hideErrorNotification()
-                sendMessageToActivities(ServiceMessage.FinishActivity)
                 stopForeground(true)
+                sendMessageToActivities(ServiceMessage.FinishActivity)
                 this@AppService.stopSelf()
             }
 
             is IntentAction.CastIntent -> {
-                appStateMachine.sendEvent(AppStateMachine.Event.RequestPublicState)
-                appStateMachine.sendEvent(AppStateMachine.Event.StartProjection(intentAction.intent))
+                appStateMachine?.sendEvent(AppStateMachine.Event.RequestPublicState)
+                appStateMachine?.sendEvent(AppStateMachine.Event.StartProjection(intentAction.intent))
             }
 
             IntentAction.CastPermissionsDenied -> {
-                appStateMachine.sendEvent(AppStateMachine.Event.CastPermissionsDenied)
-                appStateMachine.sendEvent(AppStateMachine.Event.RequestPublicState)
+                appStateMachine?.sendEvent(AppStateMachine.Event.CastPermissionsDenied)
+                appStateMachine?.sendEvent(AppStateMachine.Event.RequestPublicState)
             }
 
             IntentAction.StartOnBoot ->
-                appStateMachine.sendEvent(AppStateMachine.Event.StartStream, 4500)
+                appStateMachine?.sendEvent(AppStateMachine.Event.StartStream, 4500)
 
             IntentAction.RecoverError -> {
                 sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
                 notificationHelper.hideErrorNotification()
-                appStateMachine.sendEvent(AppStateMachine.Event.RecoverError)
+                appStateMachine?.sendEvent(AppStateMachine.Event.RecoverError)
             }
 
             else -> XLog.e(getLog("onStartCommand", "Unknown action: $intentAction"))
@@ -196,38 +197,42 @@ class AppService : Service() {
     }
 
     override fun onDestroy() {
-        XLog.d(getLog("onDestroy", "Invoked"))
+        XLog.d(getLog("onDestroy"))
         isRunning = false
-        appStateMachine.destroy()
-        coroutineScope.cancel()
+        runBlocking(coroutineScope.coroutineContext) { appStateMachine?.destroy() }
+        appStateMachine = null
+        coroutineScope.cancel(CancellationException("AppService.destroy"))
         stopForeground(true)
+        appServiceBinder = null
+        XLog.d(getLog("onDestroy", "Done"))
         super.onDestroy()
-        Runtime.getRuntime().exit(0)
     }
 
     private var slowClients: List<HttpClient> = emptyList()
 
-    private fun checkForSlowClients(clients: List<HttpClient>) = coroutineScope.launch {
+    private fun checkForSlowClients(clients: List<HttpClient>) {
         val currentSlowConnections = clients.filter { it.isSlowConnection }.toList()
         if (slowClients.containsAll(currentSlowConnections).not()) {
             val layoutInflater = ContextCompat.getSystemService(this@AppService, LayoutInflater::class.java)!!
-            val toastView = layoutInflater.inflate(R.layout.toast_slow_connection, null)
+            val binding = ToastSlowConnectionBinding.inflate(layoutInflater)
             val drawable = AppCompatResources.getDrawable(applicationContext, R.drawable.ic_notification_small_24dp)
-            toastView.iv_toast_slow_connection.setImageDrawable(drawable)
-            Toast(applicationContext).apply { view = toastView; duration = Toast.LENGTH_LONG }.show()
+            binding.ivToastSlowConnection.setImageDrawable(drawable)
+            Toast(applicationContext).apply { view = binding.root; duration = Toast.LENGTH_LONG }.show()
         }
         slowClients = currentSlowConnections
     }
 
     private fun checkAutoStartStop(clients: List<HttpClient>) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return
+
         if (clients.isNotEmpty() && isStreaming.get().not()) {
             XLog.d(getLog("checkAutoStartStop", "Auto starting"))
-            appStateMachine.sendEvent(AppStateMachine.Event.StartStream)
+            appStateMachine?.sendEvent(AppStateMachine.Event.StartStream)
         }
 
         if (clients.isEmpty() && isStreaming.get()) {
             XLog.d(getLog("checkAutoStartStop", "Auto stopping"))
-            appStateMachine.sendEvent(AppStateMachine.Event.StopStream)
+            appStateMachine?.sendEvent(AppStateMachine.Event.StopStream)
         }
     }
 }

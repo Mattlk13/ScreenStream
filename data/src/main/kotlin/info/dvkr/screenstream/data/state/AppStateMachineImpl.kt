@@ -1,55 +1,62 @@
 package info.dvkr.screenstream.data.state
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowManager
-import androidx.annotation.AnyThread
 import androidx.core.content.ContextCompat
 import com.elvishew.xlog.XLog
-import info.dvkr.screenstream.data.httpserver.AppHttpServer
-import info.dvkr.screenstream.data.httpserver.AppHttpServerImpl
-import info.dvkr.screenstream.data.httpserver.HttpServerFiles
+import info.dvkr.screenstream.data.httpserver.HttpServer
 import info.dvkr.screenstream.data.image.BitmapCapture
-import info.dvkr.screenstream.data.image.BitmapNotification
-import info.dvkr.screenstream.data.image.BitmapToJpeg
+import info.dvkr.screenstream.data.image.NotificationBitmap
 import info.dvkr.screenstream.data.model.*
 import info.dvkr.screenstream.data.other.getLog
 import info.dvkr.screenstream.data.settings.Settings
 import info.dvkr.screenstream.data.settings.SettingsReadOnly
 import info.dvkr.screenstream.data.state.helper.BroadcastHelper
 import info.dvkr.screenstream.data.state.helper.ConnectivityHelper
-import info.dvkr.screenstream.data.state.helper.MediaProjectionHelper
 import info.dvkr.screenstream.data.state.helper.NetworkHelper
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.*
+import kotlinx.coroutines.flow.*
+import java.util.concurrent.LinkedBlockingDeque
 
 class AppStateMachineImpl(
     context: Context,
-    parentJob: Job?,
     private val settingsReadOnly: SettingsReadOnly,
-    appIconBitmap: Bitmap,
-    onStatistic: (List<HttpClient>, List<TrafficPoint>) -> Unit,
-    private val onEffect: (AppStateMachine.Effect) -> Unit
+    private val onEffect: suspend (AppStateMachine.Effect) -> Unit
 ) : AppStateMachine {
 
-    private val applicationContext: Context = context.applicationContext
-    private val bitmapChannel: Channel<Bitmap> = Channel(Channel.CONFLATED)
-    private val jpegChannel: Channel<ByteArray> = Channel(Channel.CONFLATED)
-    private val mediaProjectionHelper = MediaProjectionHelper(context) { sendEvent(AppStateMachine.Event.StopStream) }
-    private val broadcastHelper = BroadcastHelper.getInstance(context, ::onError)
+    private val applicationContext = context.applicationContext
+    private val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        XLog.e(getLog("onCoroutineException"), throwable)
+        onError(FatalError.CoroutineException)
+    }
+
+    private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + coroutineExceptionHandler)
+
+    private val bitmapStateFlow = MutableStateFlow(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888))
+    private val projectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+    private val projectionCallback = object : MediaProjection.Callback() {
+        override fun onStop() {
+            XLog.i(this@AppStateMachineImpl.getLog("MediaProjection.Callback", "onStop"))
+            sendEvent(AppStateMachine.Event.StopStream)
+        }
+    }
+
+    private val broadcastHelper = BroadcastHelper.getInstance(context)
     private val connectivityHelper: ConnectivityHelper = ConnectivityHelper.getInstance(context)
     private val networkHelper = NetworkHelper(context)
-    private val bitmapNotification = BitmapNotification(context, appIconBitmap, bitmapChannel, ::onError)
-    private val bitmapToJpeg = BitmapToJpeg(settingsReadOnly, bitmapChannel, jpegChannel, ::onError)
-    private val appHttpServer: AppHttpServer
-
-    private val coroutineScope = CoroutineScope(
-        SupervisorJob(parentJob) + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
-            XLog.e(getLog("onCoroutineException"), throwable)
-            onError(FatalError.CoroutineException)
-        }
+    private val notificationBitmap = NotificationBitmap(context)
+    private val httpServer = HttpServer(
+        applicationContext, coroutineScope, settingsReadOnly, bitmapStateFlow.asStateFlow(),
+        notificationBitmap.getNotificationBitmap(NotificationBitmap.Type.ADDRESS_BLOCKED)
     )
+
 
     internal sealed class InternalEvent : AppStateMachine.Event() {
         object DiscoverAddress : InternalEvent()
@@ -60,7 +67,7 @@ class AppStateMachineImpl(
         object ScreenOff : InternalEvent()
         object Destroy : InternalEvent()
 
-        override fun toString(): String = this::class.java.simpleName
+        override fun toString(): String = javaClass.simpleName
     }
 
     internal sealed class RestartReason(private val msg: String) {
@@ -68,20 +75,20 @@ class AppStateMachineImpl(
         class SettingsChanged(msg: String) : RestartReason(msg)
         class NetworkSettingsChanged(msg: String) : RestartReason(msg)
 
-        override fun toString(): String = "${this::class.java.simpleName}[$msg]"
+        override fun toString(): String = "${javaClass.simpleName}[$msg]"
     }
 
     private val settingsListener = object : SettingsReadOnly.OnSettingsChangeListener {
         override fun onSettingsChanged(key: String) {
             if (key in arrayOf(
                     Settings.Key.HTML_ENABLE_BUTTONS, Settings.Key.HTML_BACK_COLOR,
-                    Settings.Key.ENABLE_PIN, Settings.Key.PIN
+                    Settings.Key.ENABLE_PIN, Settings.Key.PIN, Settings.Key.BLOCK_ADDRESS
                 )
             ) sendEvent(InternalEvent.RestartServer(RestartReason.SettingsChanged(key)))
 
             if (key in arrayOf(
                     Settings.Key.USE_WIFI_ONLY, Settings.Key.ENABLE_IPV6,
-                    Settings.Key.ENABLE_LOCAL_HOST, Settings.Key.SERVER_PORT
+                    Settings.Key.ENABLE_LOCAL_HOST, Settings.Key.LOCAL_HOST_ONLY, Settings.Key.SERVER_PORT
                 )
             )
                 sendEvent(InternalEvent.RestartServer(RestartReason.NetworkSettingsChanged(key)))
@@ -95,41 +102,38 @@ class AppStateMachineImpl(
         } else {
             XLog.d(getLog("sendEvent", "Event: $event"))
 
-            if (coroutineScope.isActive.not()) {
-                XLog.w(getLog("sendEvent", "ScopeIsNotActive"))
-                return
-            }
-
             try {
-                eventChannel.offer(event) || throw IllegalStateException("ChannelIsFull")
-            } catch (ignore: ClosedSendChannelException) {
-            } catch (ignore: CancellationException) {
+                _eventDeque.addLast(event)
+                _eventSharedFlow.tryEmit(event) || throw IllegalStateException("_eventSharedFlow IsFull")
             } catch (th: Throwable) {
+                XLog.e(getLog("sendEvent", _eventDeque.toString()))
                 XLog.e(getLog("sendEvent"), th)
-                onEffect(
-                    AppStateMachine.Effect.PublicState(
-                        false, true, false, emptyList(), FatalError.ChannelException
+                coroutineScope.launch(NonCancellable) {
+                    onEffect(
+                        AppStateMachine.Effect.PublicState(false, true, false, emptyList(), FatalError.ChannelException)
                     )
-                )
+                }
             }
         }
     }
 
-    private val eventChannel: SendChannel<AppStateMachine.Event> = coroutineScope.actor(capacity = 32) {
-        var streamState = StreamState()
-        var previousStreamState: StreamState
+    private var streamState = StreamState()
+    private var previousStreamState = StreamState()
+    private val _eventSharedFlow = MutableSharedFlow<AppStateMachine.Event>(extraBufferCapacity = 8)
+    private val _eventDeque = LinkedBlockingDeque<AppStateMachine.Event>()
 
-        consumeEach { event ->
-            ensureActive()
-            try {
+    init {
+        XLog.d(getLog("init"))
+
+        coroutineScope.launch(CoroutineName("AppStateMachineImpl.eventSharedFlow")) {
+            _eventSharedFlow.onEach { event ->
+                XLog.d(this@AppStateMachineImpl.getLog("eventSharedFlow.onEach", "$event"))
                 if (StateToEventMatrix.skippEvent(streamState.state, event).not()) {
-
                     previousStreamState = streamState
-
                     streamState = when (event) {
                         is InternalEvent.DiscoverAddress -> discoverAddress(streamState)
                         is InternalEvent.StartServer -> startServer(streamState)
-                        is InternalEvent.ComponentError -> componentError(streamState, event.appError)
+                        is InternalEvent.ComponentError -> componentError(streamState, event.appError, false)
                         is InternalEvent.StartStopFromWebPage -> startStopFromWebPage(streamState)
                         is InternalEvent.RestartServer -> restartServer(streamState, event.reason)
                         is InternalEvent.ScreenOff -> screenOff(streamState)
@@ -146,14 +150,73 @@ class AppStateMachineImpl(
 
                     if (streamState.isPublicStatePublishRequired(previousStreamState)) onEffect(streamState.toPublicState())
 
-                    XLog.i(this@AppStateMachineImpl.getLog("actor", "New state:${streamState.state}"))
+                    _eventDeque.pollFirst()
+                    XLog.i(this@AppStateMachineImpl.getLog("eventSharedFlow.onEach", "New state:${streamState.state}"))
                 }
-            } catch (throwable: Throwable) {
-                XLog.e(this@AppStateMachineImpl.getLog("actor"), throwable)
-                onError(FatalError.ActorException)
             }
-            ensureActive()
+                .catch { cause ->
+                    XLog.e(this@AppStateMachineImpl.getLog("eventSharedFlow.catch"), cause)
+                    streamState = componentError(streamState, FatalError.CoroutineException, true)
+                    onEffect(streamState.toPublicState())
+                }
+                .collect()
         }
+
+        settingsReadOnly.registerChangeListener(settingsListener)
+        broadcastHelper.startListening(
+            onScreenOff = { sendEvent(InternalEvent.ScreenOff) },
+            onConnectionChanged = { sendEvent(InternalEvent.RestartServer(RestartReason.ConnectionChanged(""))) }
+        )
+
+        connectivityHelper.startListening {
+            sendEvent(InternalEvent.RestartServer(RestartReason.ConnectionChanged("")))
+        }
+
+        coroutineScope.launch(CoroutineName("AppStateMachineImpl.httpServer.eventSharedFlow")) {
+            httpServer.eventSharedFlow.onEach { event ->
+                if (event !is HttpServer.Event.Statistic)
+                    XLog.d(this@AppStateMachineImpl.getLog("httpServer.eventSharedFlow.onEach", "$event"))
+
+                when (event) {
+                    is HttpServer.Event.Action ->
+                        when (event) {
+                            is HttpServer.Event.Action.StartStopRequest -> sendEvent(InternalEvent.StartStopFromWebPage)
+
+                            else -> throw IllegalArgumentException("Unknown HttpServer.Event: $event")
+                        }
+
+                    is HttpServer.Event.Statistic ->
+                        when (event) {
+                            is HttpServer.Event.Statistic.Clients ->
+                                onEffect(AppStateMachine.Effect.Statistic.Clients(event.clients))
+
+                            is HttpServer.Event.Statistic.Traffic ->
+                                onEffect(AppStateMachine.Effect.Statistic.Traffic(event.traffic))
+
+                            else -> throw IllegalArgumentException("Unknown HttpServer.Event: $event")
+                        }
+
+                    is HttpServer.Event.Error -> onError(event.error)
+
+                    else -> throw IllegalArgumentException("Unknown HttpServer.Event: $event")
+                }
+            }
+                .catch { cause ->
+                    XLog.e(this@AppStateMachineImpl.getLog("httpServer.eventSharedFlow.catch"), cause)
+                    onError(FatalError.CoroutineException)
+                }
+                .collect()
+        }
+    }
+
+    override suspend fun destroy() {
+        XLog.d(getLog("destroy"))
+        sendEvent(InternalEvent.Destroy)
+        httpServer.destroy().await()
+        settingsReadOnly.unregisterChangeListener(settingsListener)
+        broadcastHelper.stopListening()
+        connectivityHelper.stopListening()
+        coroutineScope.cancel()
     }
 
     private fun onError(appError: AppError) {
@@ -161,56 +224,23 @@ class AppStateMachineImpl(
         sendEvent(InternalEvent.ComponentError(appError))
     }
 
-    init {
-        XLog.d(getLog("init", "Invoked"))
-        settingsReadOnly.registerChangeListener(settingsListener)
-        broadcastHelper.startListening(
-            onScreenOff = { sendEvent(InternalEvent.ScreenOff) },
-            onConnectionChanged = { sendEvent(InternalEvent.RestartServer(RestartReason.ConnectionChanged(""))) }
-        )
-
-        bitmapToJpeg.start()
-        appHttpServer = AppHttpServerImpl(
-            HttpServerFiles(applicationContext, settingsReadOnly),
-            jpegChannel,
-            { sendEvent(InternalEvent.StartStopFromWebPage) },
-            onStatistic,
-            ::onError
-        )
-        connectivityHelper.startListening {
-            sendEvent(InternalEvent.RestartServer(RestartReason.ConnectionChanged("")))
-        }
-    }
-
-    @AnyThread
-    override fun destroy() {
-        XLog.d(getLog("destroy", "Invoked"))
-        sendEvent(InternalEvent.Destroy)
-        settingsReadOnly.unregisterChangeListener(settingsListener)
-        broadcastHelper.stopListening()
-        connectivityHelper.stopListening()
-        coroutineScope.cancel()
-        eventChannel.close()
-        bitmapToJpeg.destroy()
-        bitmapNotification.destroy()
-        appHttpServer.stop()
-    }
-
     private fun stopProjection(streamState: StreamState): StreamState {
-        XLog.d(getLog("stopProjection", "Invoked"))
+        XLog.d(getLog("stopProjection"))
         if (streamState.isStreaming()) {
             streamState.bitmapCapture?.destroy()
-            mediaProjectionHelper.stopMediaProjection(streamState.mediaProjection)
+            streamState.mediaProjection?.unregisterCallback(projectionCallback)
+            streamState.mediaProjection?.stop()
         }
 
         return streamState.copy(mediaProjection = null, bitmapCapture = null)
     }
 
     private fun discoverAddress(streamState: StreamState): StreamState {
-        XLog.d(getLog("discoverAddress", "Invoked"))
+        XLog.d(getLog("discoverAddress"))
 
         val netInterfaces = networkHelper.getNetInterfaces(
-            settingsReadOnly.useWiFiOnly, settingsReadOnly.enableIPv6, settingsReadOnly.enableLocalHost
+            settingsReadOnly.useWiFiOnly, settingsReadOnly.enableIPv6,
+            settingsReadOnly.enableLocalHost, settingsReadOnly.localHostOnly
         )
         if (netInterfaces.isEmpty())
             return if (streamState.httpServerAddressAttempt < 3) {
@@ -234,35 +264,36 @@ class AppStateMachineImpl(
         )
     }
 
-    private fun startServer(streamState: StreamState): StreamState {
-        XLog.d(getLog("startServer", "Invoked"))
+    private suspend fun startServer(streamState: StreamState): StreamState {
+        XLog.d(getLog("startServer"))
         require(streamState.netInterfaces.isNotEmpty())
 
-        appHttpServer.stop()
-        appHttpServer.start(streamState.netInterfaces, settingsReadOnly.severPort, settingsReadOnly.useWiFiOnly)
-        bitmapNotification.sentBitmapNotification(BitmapNotification.Type.START)
+        httpServer.stop().await()
+        httpServer.start(streamState.netInterfaces)
+        bitmapStateFlow.tryEmit(notificationBitmap.getNotificationBitmap(NotificationBitmap.Type.START))
 
         return streamState.copy(state = StreamState.State.SERVER_STARTED)
     }
 
     private fun startStream(streamState: StreamState): StreamState {
-        XLog.d(getLog("startStream", "Invoked"))
+        XLog.d(getLog("startStream"))
 
         return streamState.copy(state = StreamState.State.PERMISSION_PENDING)
     }
 
     private fun castPermissionsDenied(streamState: StreamState): StreamState {
-        XLog.d(getLog("castPermissionsDenied", "Invoked"))
+        XLog.d(getLog("castPermissionsDenied"))
 
         return streamState.copy(state = StreamState.State.SERVER_STARTED)
     }
 
     private fun startProjection(streamState: StreamState, intent: Intent): StreamState {
-        XLog.d(getLog("startProjection", "Invoked"))
+        XLog.d(getLog("startProjection"))
 
-        val mediaProjection = mediaProjectionHelper.getMediaProjection(intent)
+        val mediaProjection = projectionManager.getMediaProjection(Activity.RESULT_OK, intent)
+        mediaProjection.registerCallback(projectionCallback, Handler(Looper.getMainLooper()))
         val display = ContextCompat.getSystemService(applicationContext, WindowManager::class.java)!!.defaultDisplay
-        val bitmapCapture = BitmapCapture(display, settingsReadOnly, mediaProjection, bitmapChannel, ::onError)
+        val bitmapCapture = BitmapCapture(display, settingsReadOnly, mediaProjection, bitmapStateFlow, ::onError)
         bitmapCapture.start()
 
         return streamState.copy(
@@ -273,30 +304,30 @@ class AppStateMachineImpl(
     }
 
     private fun stopStream(streamState: StreamState): StreamState {
-        XLog.d(getLog("stopStream", "Invoked"))
+        XLog.d(getLog("stopStream"))
 
         val state = stopProjection(streamState)
         if (settingsReadOnly.checkAndChangeAutoChangePinOnStop().not())
-            bitmapNotification.sentBitmapNotification(BitmapNotification.Type.START)
+            bitmapStateFlow.tryEmit(notificationBitmap.getNotificationBitmap(NotificationBitmap.Type.START))
 
         return state.copy(state = StreamState.State.SERVER_STARTED)
     }
 
     private fun screenOff(streamState: StreamState): StreamState {
-        XLog.d(getLog("screenOff", "Invoked"))
+        XLog.d(getLog("screenOff"))
 
         return if (settingsReadOnly.stopOnSleep && streamState.isStreaming()) stopStream(streamState)
         else streamState
     }
 
     private fun destroy(streamState: StreamState): StreamState {
-        XLog.d(getLog("destroy", "Invoked"))
+        XLog.d(getLog("destroy"))
 
         return stopProjection(streamState).copy(state = StreamState.State.DESTROYED)
     }
 
     private fun startStopFromWebPage(streamState: StreamState): StreamState {
-        XLog.d(getLog("startStopFromWebPage", "Invoked"))
+        XLog.d(getLog("startStopFromWebPage"))
 
         if (streamState.isStreaming()) return stopStream(streamState)
 
@@ -306,8 +337,8 @@ class AppStateMachineImpl(
         return streamState
     }
 
-    private fun restartServer(streamState: StreamState, reason: RestartReason): StreamState {
-        XLog.d(getLog("restartServer", "Invoked"))
+    private suspend fun restartServer(streamState: StreamState, reason: RestartReason): StreamState {
+        XLog.d(getLog("restartServer"))
 
         val state = stopProjection(streamState)
 
@@ -316,11 +347,13 @@ class AppStateMachineImpl(
                 onEffect(AppStateMachine.Effect.ConnectionChanged)
 
             is RestartReason.SettingsChanged ->
-                bitmapNotification.sentBitmapNotification(BitmapNotification.Type.RELOAD_PAGE)
+                bitmapStateFlow.tryEmit(notificationBitmap.getNotificationBitmap(NotificationBitmap.Type.RELOAD_PAGE))
 
             is RestartReason.NetworkSettingsChanged ->
-                bitmapNotification.sentBitmapNotification(BitmapNotification.Type.NEW_ADDRESS)
+                bitmapStateFlow.tryEmit(notificationBitmap.getNotificationBitmap(NotificationBitmap.Type.NEW_ADDRESS))
         }
+
+        httpServer.stop().await()
 
         if (state.state == StreamState.State.ERROR)
             sendEvent(AppStateMachine.Event.RecoverError)
@@ -334,21 +367,22 @@ class AppStateMachineImpl(
         )
     }
 
-    private fun componentError(streamState: StreamState, appError: AppError): StreamState {
-        XLog.d(getLog("componentError", "Invoked"))
+    private fun componentError(streamState: StreamState, appError: AppError, report: Boolean): StreamState {
+        XLog.d(getLog("componentError"))
+        if (report) XLog.e(getLog("componentError"), appError)
 
         return stopProjection(streamState).copy(state = StreamState.State.ERROR, appError = appError)
     }
 
     private fun recoverError(streamState: StreamState): StreamState {
-        XLog.d(getLog("recoverError", "Invoked"))
+        XLog.d(getLog("recoverError"))
 
         sendEvent(InternalEvent.DiscoverAddress)
         return streamState.copy(state = StreamState.State.RESTART_PENDING, appError = null)
     }
 
-    private fun requestPublicState(streamState: StreamState): StreamState {
-        XLog.d(getLog("requestPublicState", "Invoked"))
+    private suspend fun requestPublicState(streamState: StreamState): StreamState {
+        XLog.d(getLog("requestPublicState"))
 
         onEffect(streamState.toPublicState())
         return streamState

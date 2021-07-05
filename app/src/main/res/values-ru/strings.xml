@@ -36,8 +36,13 @@
     <string name="stream_fragment_client_disconnected">Отключен</string>
     <string name="stream_fragment_client_slow_network">Медленный</string>
     <string name="stream_fragment_client_connected">Подключен</string>
+    <string name="stream_fragment_client_blocked">Заблокирован</string>
 
     <string name="item_device_address">Адрес устройства:</string>
+    <string name="item_device_address_description_open_address">Открыть адрес</string>
+    <string name="item_device_address_description_copy_address">Копировать адрес</string>
+    <string name="item_device_address_description_share_address">Поделиться адресом</string>
+    <string name="item_device_address_description_qr_address">Показать адрес как QR-код</string>
 
     <string name="permission_activity_error_title_activity_not_found">Ошибка диалога доступа</string>
     <string name="permission_activity_error_activity_not_found">Баг Андроида. Не отмечайте \"Больше не показывать\" в диалоге запроса доступа к изображению экрана. Если вы уже отметили, переустановите приложение.</string>
@@ -107,10 +112,10 @@
     <string name="pref_rotate_summary">Поворачивать изображение перед отправкой</string>
     <string name="pref_fps">Ограничить кадры в секунду</string>
     <string name="pref_fps_summary">Установите максимальное количество кадров в секунду</string>
-    <string name="pref_fps_dialog">Установите максимальное количество кадров в секунду.\nЗначения: 1–30 (По умолчанию: 8)</string>
+    <string name="pref_fps_dialog">Установите максимальное количество кадров в секунду.\nЗначения: 1–60 (По умолчанию: 30)</string>
     <string name="pref_jpeg_quality">Качество JPEG</string>
     <string name="pref_jpeg_quality_summary">Установить качество JPEG</string>
-    <string name="pref_jpeg_quality_dialog">Установите качество сжатия JPEG.\nЗначения: 10–100\n(По умолчанию: 100)</string>
+    <string name="pref_jpeg_quality_dialog">Установите качество сжатия JPEG.\nЗначения: 10–100\n(По умолчанию: 80)</string>
     <string name="pref_settings_security">Безопасность</string>
     <string name="pref_enable_pin">Использовать PIN-код</string>
     <string name="pref_enable_pin_summary">Защитить доступ к трансляции PIN-кодом</string>
@@ -123,6 +128,8 @@
     <string name="pref_set_pin">Установить PIN-код</string>
     <string name="pref_set_pin_summary">Указать PIN-код</string>
     <string name="pref_set_pin_dialog">Введите пин.\nПо умолчанию: 0000</string>
+    <string name="pref_block_address">Блокрировать IP-адрес</string>
+    <string name="pref_block_address_summary">Блокировать IP-адрес клиента после 5 неправильных попыток ввода PIN-кода на 5 минут</string>
     <string name="pref_settings_advanced">Дополнительно</string>
     <string name="pref_wifi_only">Использовать только WiFi</string>
     <string name="pref_wifi_only_summary">Запускать сервер только на WiFi интерфейсе</string>
@@ -130,6 +137,8 @@
     <string name="pref_enable_ipv6_summary">Запускать сервер и на IPv6 адресах</string>
     <string name="pref_enable_localhost">Слушать local host</string>
     <string name="pref_enable_localhost_summary">Запускать сервер и на local host адресах</string>
+    <string name="pref_localhost_only">Слушать только local host</string>
+    <string name="pref_localhost_only_summary">Запускать сервер только на local host адресах</string>
     <string name="pref_server_port">Порт сервера</string>
     <string name="pref_server_port_summary">Установить порт для входяших подключений</string>
     <string name="pref_server_port_dialog">Установите порт сервера для входящих подключений.\nЗначения: 1025–65535\n(По умолчанию: 8080)</string>
@@ -144,4 +153,5 @@
     <string name="about_fragment_email_chooser_header">Отправка письма…</string>
     <string name="about_fragment_app_sources">Исходный код приложения</string>
     <string name="about_fragment_privacy_policy">Политика приватности</string>
+    <string name="about_fragment_license">Лицензия</string>
 </resources>

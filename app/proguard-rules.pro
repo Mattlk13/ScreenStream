@@ -20,36 +20,17 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
--allowaccessmodification
--repackageclasses
-
 -keepnames class info.dvkr.screenstream.** { *; }
+-keep class **.R$* {
+    <fields>;
+}
 
 #Crashlytics
 -keepattributes *Annotation*
 -keepattributes SourceFile,LineNumberTable
--keep public class * extends java.lang.Exception
--keep class com.crashlytics.** { *; }
--dontwarn com.crashlytics.**
+-keep class com.google.firebase.crashlytics.** { *; }
 
-
-# Netty
--dontwarn io.netty.**
--keepnames class io.netty.** { *;}
-
-# SLF4J
--dontwarn org.slf4j.**
-
-# RxJava
--dontwarn sun.misc.**
--keepclassmembers class rx.internal.util.unsafe.*ArrayQueue*Field* {
-   long producerIndex;
-   long consumerIndex;
-}
--keepclassmembers class rx.internal.util.unsafe.BaseLinkedQueueProducerNodeRef {
-    rx.internal.util.atomic.LinkedQueueNode producerNode;
-}
--keepclassmembers class rx.internal.util.unsafe.BaseLinkedQueueConsumerNodeRef {
-    rx.internal.util.atomic.LinkedQueueNode consumerNode;
-}
--dontnote rx.internal.util.PlatformDependent
+#KTOR
+-keep class io.ktor.application.Application
+-keep class kotlin.reflect.jvm.internal.**
+-keep class kotlin.text.RegexOption

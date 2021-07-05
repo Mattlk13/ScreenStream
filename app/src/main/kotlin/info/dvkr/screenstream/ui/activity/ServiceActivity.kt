@@ -6,10 +6,10 @@ import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.IBinder
 import androidx.annotation.CallSuper
+import androidx.annotation.LayoutRes
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.Observer
 import androidx.lifecycle.coroutineScope
 import com.elvishew.xlog.XLog
 import info.dvkr.screenstream.data.other.getLog
@@ -18,11 +18,14 @@ import info.dvkr.screenstream.data.settings.SettingsReadOnly
 import info.dvkr.screenstream.service.AppService
 import info.dvkr.screenstream.service.ServiceMessage
 import info.dvkr.screenstream.service.helper.IntentAction
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 
-abstract class ServiceActivity : AppUpdateActivity() {
+abstract class ServiceActivity(@LayoutRes contentLayoutId: Int) : AppUpdateActivity(contentLayoutId) {
 
     private val serviceMessageLiveData = MutableLiveData<ServiceMessage>()
     private var serviceMessageFlowJob: Job? = null
@@ -31,12 +34,17 @@ abstract class ServiceActivity : AppUpdateActivity() {
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder) {
             XLog.d(this@ServiceActivity.getLog("onServiceConnected"))
-            serviceMessageFlowJob = (service as AppService.AppServiceBinder).getServiceMessageFlow()
-                .onEach {
-                    XLog.v(this@ServiceActivity.getLog("onServiceMessage", "$it"))
-                    serviceMessageLiveData.value = it
+            serviceMessageFlowJob =
+                lifecycle.coroutineScope.launch(CoroutineName("ServiceActivity.ServiceMessageFlow")) {
+                    (service as AppService.AppServiceBinder).getServiceMessageFlow()
+                        .onEach { serviceMessage ->
+                            XLog.v(this@ServiceActivity.getLog("onServiceMessage", "$serviceMessage"))
+                            serviceMessageLiveData.value = serviceMessage
+                        }
+                        .catch { cause -> XLog.e(this@ServiceActivity.getLog("onServiceMessage"), cause) }
+                        .collect()
                 }
-                .launchIn(lifecycle.coroutineScope)
+
             isBound = true
             IntentAction.GetServiceState.sendToAppService(this@ServiceActivity)
         }
@@ -63,7 +71,7 @@ abstract class ServiceActivity : AppUpdateActivity() {
 
     override fun onStart() {
         super.onStart()
-        serviceMessageLiveData.observe(this, Observer { message -> message?.let { onServiceMessage(it) } })
+        serviceMessageLiveData.observe(this, { message -> message?.let { onServiceMessage(it) } })
         bindService(AppService.getAppServiceIntent(this), serviceConnection, Context.BIND_AUTO_CREATE)
 
         settings.registerChangeListener(settingsListener)

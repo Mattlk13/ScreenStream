@@ -4,7 +4,7 @@
 <head>
     <meta charset=utf-8>
     <title>Screen Stream</title>
-    <link href="/favicon.ico" rel="shortcut icon" type="image/x-icon">
+    <link href="/favicon.png" rel="shortcut icon" type="image/x-icon">
     <style>
         body,
         html {
@@ -28,8 +28,8 @@
             left: 0;
             right: 0;
             margin: auto;
-            max-height: 95vh;
-            max-width: 95%
+            max-height: 100vh;
+            max-width: 100%
         }
 
         div {
@@ -50,7 +50,7 @@
 </head>
 
 <body onmousemove="onMouseMove()">
-    <img src="SCREEN_STREAM_ADDRESS" />
+    <img id="stream" src="SCREEN_STREAM_ADDRESS" onerror="streamFallback()" />
     <div id="buttons">
         <input type="image" id="fullscreen" src="/fullscreen-on.png" onclick="toggleFullscreen()" />
         <input type="image" src="/start-stop.png" onclick="toggleStartStop()" />
@@ -79,6 +79,20 @@
             if (isFullscreen()) fullscreenInput.src = "/fullscreen-off.png"; else fullscreenInput.src = "/fullscreen-on.png";
         }
 
+        function streamFallback() { //mjpeg -> jpeg fallback
+            var baseurl = "SCREEN_STREAM_ADDRESS".split(".mjpeg")[0];
+
+            function streamStillUpdate() { // refresh the image
+                stream.src = baseurl + ".jpeg?t=" + Math.random();
+            }
+
+            setInterval(streamStillUpdate, 500);
+        }
+
+        setTimeout( function () { // check if the mjpeg image could be loaded, otherwise use the jpeg fallback
+            if (!document.getElementById("stream").complete) streamFallback();
+        }, 2000);
+
         document.addEventListener("fullscreenchange", fullScreenHandler);
         document.addEventListener("webkitfullscreenchange", fullScreenHandler);
         document.addEventListener("mozfullscreenchange", fullScreenHandler);
@@ -93,7 +107,7 @@
 
         function toggleStartStop() {
             var xmlHttp = new XMLHttpRequest();
-            xmlHttp.open("GET", window.location.origin + "START_STOP_ADDRESS", true);
+            xmlHttp.open("GET", window.location.origin + "/start-stop", true);
             xmlHttp.send(null);
         }
     </script>
