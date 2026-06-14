@@ -12,5 +12,9 @@ public class AdMob(context: Context) {
 }
 
 @Composable
-public fun AdaptiveBanner(modifier: Modifier = Modifier, collapsible: Boolean = false) {
+public fun AnchoredAdaptiveBanner(modifier: Modifier = Modifier) {
+}
+
+@Composable
+public fun InlineAdaptiveBanner(modifier: Modifier = Modifier) {
 }
